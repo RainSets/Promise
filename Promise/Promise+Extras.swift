@@ -88,7 +88,7 @@ public enum Promises {
 
     public static func zip<T, U>(_ first: Promise<T>, _ second: Promise<U>) -> Promise<(T, U)> {
         return Promise<(T, U)>(work: { fulfill, reject in
-            let resolver: (Any) -> () = { _ in
+            let resolver: (Any) -> Void = { _ in
                 if let firstValue = first.value, let secondValue = second.value {
                     fulfill((firstValue, secondValue))
                 }
@@ -141,7 +141,7 @@ extension Promise {
     }
 
     @discardableResult
-    public func always(on queue: ExecutionContext = DispatchQueue.main, _ onComplete: @escaping () -> ()) -> Promise<Value> {
+    public func always(on queue: ExecutionContext = DispatchQueue.main, _ onComplete: @escaping () -> Void) -> Promise<Value> {
         return then(on: queue, { _ in
             onComplete()
         }, { _ in
@@ -150,8 +150,17 @@ extension Promise {
     }
 
     public func recover(_ recovery: @escaping (Error) throws -> Promise<Value>) -> Promise<Value> {
+        return recover(type: Error.self, recovery)
+    }
+
+    public func recover<E: Error>(type errorType: E.Type, _ recovery: @escaping (E) throws -> Promise<Value>) -> Promise<Value> {
         return Promise(work: { fulfill, reject in
-            self.then(fulfill).catch({ error in
+            self.then(fulfill).catch({ anyError in
+                guard let error = anyError as? E else {
+                    reject(anyError)
+                    return
+                }
+
                 do {
                     try recovery(error).then(fulfill, reject)
                 } catch (let error) {
@@ -167,6 +176,14 @@ extension Promise {
                 throw PromiseCheckError()
             }
             return value
+        })
+    }
+    
+    public func `catch`<E: Error>(type errorType: E.Type, _ onRejected: @escaping (E) -> Void) -> Promise<Value> {
+        return self.catch({ error in
+            if let castedError = error as? E {
+                onRejected(castedError)
+            }
         })
     }
 }
